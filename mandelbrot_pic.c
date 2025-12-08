@@ -24,7 +24,6 @@ typedef struct
 {
     double max_x, min_x, max_y, min_y;
     int screen_width, screen_height;
-    int screen_height_stop, screen_height_start;
     int max_iter;
     // can be zero
     void *custom_data;
@@ -35,6 +34,7 @@ typedef struct
 {
     mand_parameters_t p;
     pixel *buf;
+    int start_y, end_y;
 }thread_data_t;
 
 void *calc_mandelbrot(void *data)
@@ -44,7 +44,7 @@ void *calc_mandelbrot(void *data)
     {
         double real = p->min_x + ((p->max_x - p->min_x) / (double)(p->screen_width  - 1) * screen_x);
         
-        for (int screen_y = p->screen_height_start; screen_y < p->screen_height_stop; screen_y++)
+        for (int screen_y = ((thread_data_t *)data)->start_y; screen_y < ((thread_data_t *)data)->end_y; screen_y++)
         {
             double imag = p->max_y - ((p->max_y - p->min_y) / (double)(p->screen_height - 1) * screen_y);
             
@@ -101,16 +101,16 @@ pixel *get_mand_buf(mand_parameters_t *param)
     {
         mand_parameters_t curr_param = *param;
 
-        curr_param.screen_height_start = i * step_y;
-        curr_param.screen_height_stop  = (i == THREAD_COUNT - 1) ? param->screen_height : i * step_y + step_y;
-
-        curr_y += step_y;
-
         thread_data_t curr_data = 
         {
             .p = curr_param,
             .buf = mand_buf,
         };
+
+        curr_data.start_y = i * step_y;
+        curr_data.end_y   = (i == THREAD_COUNT - 1) ? param->screen_height : i * step_y + step_y;
+
+        curr_y += step_y;
 
         thread_data[i] = curr_data;
         pthread_create(&threads[i], NULL, calc_mandelbrot, &thread_data[i]);

@@ -22,7 +22,6 @@ typedef struct
 {
     double max_x, min_x, max_y, min_y;
     int screen_width, screen_height;
-    int screen_height_stop, screen_height_start;
     int max_iter;
     // can be zero
     void *custom_data;
@@ -33,6 +32,7 @@ typedef struct
 {
     mand_parameters_t p;
     pixel *buf;
+    int start_y, end_y;
 }thread_data_t;
 
 void *calc_mandelbrot(void *data)
@@ -42,7 +42,7 @@ void *calc_mandelbrot(void *data)
     {
         double real = p->min_x + ((p->max_x - p->min_x) / (double)(p->screen_width  - 1) * screen_x);
         
-        for (int screen_y = p->screen_height_start; screen_y < p->screen_height_stop; screen_y++)
+        for (int screen_y = ((thread_data_t *)data)->start_y; screen_y < ((thread_data_t *)data)->end_y; screen_y++)
         {
             double imag = p->max_y - ((p->max_y - p->min_y) / (double)(p->screen_height - 1) * screen_y);
             
@@ -77,6 +77,7 @@ Texture2D get_mand_tex(mand_parameters_t *param, int thread_count)
     if (param->screen_height < thread_count)
     {
         thread_count = param->screen_height;
+        printf("reduce thread count to %d\n", param->screen_height);
     }
 
     printf("Running on %d threads\n", thread_count);
@@ -105,16 +106,16 @@ Texture2D get_mand_tex(mand_parameters_t *param, int thread_count)
     {
         mand_parameters_t curr_param = *param;
 
-        curr_param.screen_height_start = curr_y;
-        curr_param.screen_height_stop  = curr_y + step_y <= param->screen_height ? curr_y + step_y : param->screen_height;
-
-        curr_y += step_y;
-
         thread_data_t curr_data = 
         {
             .p = curr_param,
             .buf = mand_buf,
         };
+
+        curr_data.start_y = curr_y;
+        curr_data.end_y   = curr_y + step_y <= param->screen_height ? curr_y + step_y : param->screen_height;
+
+        curr_y += step_y;
 
         thread_data[i] = curr_data;
         pthread_create(&threads[i], NULL, calc_mandelbrot, &thread_data[i]);
@@ -143,25 +144,25 @@ Texture2D get_mand_tex(mand_parameters_t *param, int thread_count)
     return tex;
 }
 
-pixel get_color(int *fixed_data, void *custom_data)
-{
-    pixel pix;
+// pixel get_color(int *fixed_data, void *custom_data)
+// {
+//     pixel pix;
     
-    if (fixed_data[0] == fixed_data[1])
-    {
-        pix = (pixel){255, 255, 255};
-    }else
-    {
-        pix = (pixel)
-        {
-            .r = (((Color *)custom_data)->r % 255) / (float)fixed_data[1] * (float)fixed_data[0],
-            .g = (((Color *)custom_data)->g % 255) / (float)fixed_data[1] * (float)fixed_data[0],
-            .b = (((Color *)custom_data)->b % 255) / (float)fixed_data[1] * (float)fixed_data[0],
-        };
-    }
+//     if (fixed_data[0] == fixed_data[1])
+//     {
+//         pix = (pixel){255, 255, 255};
+//     }else
+//     {
+//         pix = (pixel)
+//         {
+//             .r = (((Color *)custom_data)->r % 255) / (float)fixed_data[1] * (float)fixed_data[0],
+//             .g = (((Color *)custom_data)->g % 255) / (float)fixed_data[1] * (float)fixed_data[0],
+//             .b = (((Color *)custom_data)->b % 255) / (float)fixed_data[1] * (float)fixed_data[0],
+//         };
+//     }
     
-    return pix;
-}
+//     return pix;
+// }
 
 // pixel get_color(int *fixed_data, void *custom_data)
 // {
@@ -178,13 +179,35 @@ pixel get_color(int *fixed_data, void *custom_data)
 //     return pix;
 // }
 
+pixel get_color(int *fixed_data, void *custom_data)
+{
+    int iter = fixed_data[0];
+    int max_iter = fixed_data[1];
+
+    pixel pix;
+
+    if(iter >= max_iter) {
+        pix.r = 0;
+        pix.g = 0;
+        pix.b = 0;
+    } else {
+        float t = (float)iter / (float)max_iter;
+
+        pix.r = (uint8_t)(9*(1-t)*t*t*t*255);
+        pix.g = (uint8_t)(15*(1-t)*(1-t)*t*t*255);
+        pix.b = (uint8_t)(8.5*(1-t)*(1-t)*(1-t)*t*255);
+    }
+
+    return pix;
+}
+
 typedef enum
 {
     ITER, R, G, B,
 } change_state;
 
-#define MAX_ITER_START 10000
-#define THREAD_COUNT 100
+#define MAX_ITER_START 400
+#define THREAD_COUNT 50
 
 int main()
 {
@@ -204,6 +227,11 @@ int main()
         .min_x = -2,
         .max_y = 1.2,
         .min_y = -1.2,
+
+        // .max_x = 0.5,
+        // .min_x = -0.5,
+        // .max_y = 0.5,
+        // .min_y = -0.5,
 
         .screen_width = screen_width,
         .screen_height = screen_height,
@@ -247,6 +275,22 @@ int main()
             {
                 values[state] = 0;
             }
+        }
+
+        if(IsKeyPressed(KEY_Z))
+        {
+            mand_parameters.max_x -= 0.1;
+            mand_parameters.max_y -= 0.1;
+            mand_parameters.min_x += 0.1;
+            mand_parameters.min_y += 0.1;
+        }
+
+        if(IsKeyPressed(KEY_U))
+        {
+            mand_parameters.max_x += 0.1;
+            mand_parameters.max_y += 0.1;
+            mand_parameters.min_x -= 0.1;
+            mand_parameters.min_y -= 0.1;
         }
 
         BeginDrawing();
